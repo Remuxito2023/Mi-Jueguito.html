@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PS5 DRONE STRIKE - Remux Edition</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; user-select: none; }
+        #hud { position: absolute; top: 20px; left: 20px; color: #fff; text-shadow: 2px 2px 4px #000; pointer-events: none; }
+        #mission { position: absolute; top: 20px; right: 20px; color: #0f0; text-align: right; text-shadow: 2px 2px 4px #000; pointer-events: none; }
+        #trophy-popup { 
+            position: absolute; bottom: 30px; right: 30px; background: rgba(0,0,0,0.8); border-left: 5px solid #ffd700; 
+            color: #fff; padding: 15px; display: none; animation: slideIn 0.5s ease-out;
+        }
+        @keyframes slideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
+        .bar-container { width: 200px; height: 10px; background: #333; margin-top: 5px; border: 1px solid #555; }
+        .bar-fill { height: 100%; background: #0f0; width: 100%; transition: width 0.2s; }
+        #crosshair { position: absolute; top: 50%; left: 50%; width: 20px; height: 20px; border: 2px solid rgba(255,255,255,0.5); border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; }
+        #crosshair::after { content: ''; position: absolute; top: 50%; left: 50%; width: 4px; height: 4px; background: #f00; border-radius: 50%; transform: translate(-50%, -50%); }
+    </style>
+</head>
+<body>
+    <div id="hud">
+        <div style="font-size: 24px; font-weight: bold;">PS5 DRONE STRIKE</div>
+        <div style="font-size: 12px; color: #aaa;">VERSIÓN PS5 13.60 | REMUX</div>
+        <div style="margin-top: 10px;">SALUD DEL DRON</div>
+        <div class="bar-container"><div id="health-bar" class="bar-fill"></div></div>
+        <div style="margin-top: 5px; font-size: 14px;">MUNICIÓN: <span id="ammo">∞</span></div>
+    </div>
+    
+    <div id="mission">
+        <div style="font-size: 18px; font-weight: bold;">MISIÓN ACTUAL</div>
+        <div id="mission-text">Elimina a 5 NPCs</div>
+        <div id="mission-progress" style="font-size: 24px; font-weight: bold;">0 / 5</div>
+    </div>
+
+    <div id="trophy-popup">
+        <div style="color: #ffd700; font-weight: bold;">TROFEO DESBLOQUEADO</div>
+        <div id="trophy-name" style="font-size: 18px;"></div>
+    </div>
+
+    <div id="crosshair"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // ==========================================
+        // MOTOR DE JUEGO - PS5 DRONE STRIKE
+        // ==========================================
+        
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x87ceeb);
+        scene.fog = new THREE.Fog(0x87ceeb, 10, 100);
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        document.body.appendChild(renderer.domElement);
+
+        // Luces
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        dirLight.position.set(50, 100, 50);
+        dirLight.castShadow = true;
+        scene.add(dirLight);
+
+        // Suelo
+        const groundGeo = new THREE.PlaneGeometry(200, 200);
+        const groundMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
+        const ground = new THREE.Mesh(groundGeo, groundMat);
+        ground.rotation.x = -Math.PI / 2;
+        ground.receiveShadow = true;
+        scene.add(ground);
+
+        // Ciudad procedural
+        const buildingMat = new THREE.MeshStandardMaterial({ color: 0x555555 });
+        for (let i = -4; i <= 4; i++) {
+            for (let j = -4; j <= 4; j++) {
+                if (i === 0 && j === 0) continue;
+                const h = Math.random() * 10 + 5;
+                const b = new THREE.Mesh(new THREE.BoxGeometry(4, h, 4), buildingMat);
+                b.position.set(i * 10, h / 2, j * 10);
+                b.castShadow = true;
+                b.receiveShadow = true;
+                scene.add(b);
+            }
+        }
+
+        // Entidades
+        const npcs = [];
+        const cars = [];
+        const particles = [];
+        
+        const npcGeo = new THREE.CapsuleGeometry(0.3, 1, 4, 8);
+        const npcMat = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+        const carGeo = new THREE.BoxGeometry(2, 1, 4);
+        const carMat = new THREE.MeshStandardMaterial({ color: 0x0000ff });
+
+        function spawnEntities() {
+            for (let i = 0; i < 20; i++) {
+                const npc = new THREE.Mesh(npcGeo, npcMat);
+                npc.position.set((Math.random() - 0.5) * 80, 0.8, (Math.random() - 0.5) * 80);
+                npc.userData = { type: 'npc', health: 100, alive: true };
+                scene.add(npc);
+                npcs.push(npc);
+            }
+            for (let i = 0; i < 10; i++) {
+                const car = new THREE.Mesh(carGeo, carMat);
+                car.position.set((Math.random() - 0.5) * 80, 0.5, (Math.random() - 0.5) * 80);
+                car.userData = { type: 'car', health: 200, alive: true };
+                scene.add(car);
+                cars.push(car);
+            }
+        }
+        spawnEntities();
+
+        // Dron (Cámara)
+        const drone = {
+            pos: new THREE.Vector3(0, 5, 20),
+            vel: new THREE.Vector3(0, 0, 0),
+            speed: 0.5,
+            rotSpeed: 0.02,
+            health: 100
+        };
+        camera.position.copy(drone.pos);
+
+        // Input (Teclado + Gamepad PS5)
+        const keys = {};
+        window.addEventListener('keydown', e => keys[e.code] = true);
+        window.addEventListener('keyup', e => keys[e.code] = false);
+        
+        let gamepad = null;
+        window.addEventListener('gamepadconnected', e => gamepad = e.gamepad);
+
+        // Disparo
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2(0, 0);
+        let canShoot = true;
+
+        window.addEventListener('mousedown', () => {
+            if (!canShoot) return;
+            canShoot = false;
+            setTimeout(() => canShoot = true, 200);
+
+            raycaster.setFromCamera(mouse, camera);
+            const targets = [...npcs.filter(n => n.userData.alive), ...cars.filter(c => c.userData.alive)];
+            const intersects = raycaster.intersectObjects(targets);
+
+            if (intersects.length > 0) {
+                const target = intersects[0].object;
+                target.userData.health -= 50;
+                createExplosion(intersects[0].point, 0xffff00, 0.2);
+                
+                if (target.userData.health <= 0) {
+                    target.userData.alive = false;
+                    scene.remove(target);
+                    createExplosion(target.position, 0xff4500, 1.5);
+                    if (target.userData.type === 'npc') missionState.kills++;
+                    if (target.userData.type === 'car') missionState.carsDestroyed++;
+                    updateMission();
+                }
+            }
+        });
+
+        // Explosiones
+        function createExplosion(pos, color, size) {
+            const geo = new THREE.SphereGeometry(size, 8, 8);
+            const mat = new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: 0.8 });
+            const p = new THREE.Mesh(geo, mat);
+            p.position.copy(pos);
+            p.userData = { life: 1.0 };
+            scene.add(p);
+            particles.push(p);
+        }
+
+        // Misiones y Trofeos
+        const missionState = { kills: 0, carsDestroyed: 0, step: 0 };
+        const trophies = JSON.parse(localStorage.getItem('ps5_drone_trophies')) || {
+            firstBlood: false,
+            demolition: false,
+            platinum: false
+        };
+
+        function unlockTrophy(name) {
+            if (trophies[name]) return;
+            trophies[name] = true;
+            localStorage.setItem('ps5_drone_trophies', JSON.stringify(trophies));
+            document.getElementById('trophy-name').innerText = name.toUpperCase();
+            document.getElementById('trophy-popup').style.display = 'block';
+            setTimeout(() => document.getElementById('trophy-popup').style.display = 'none', 3000);
+        }
+
+        function updateMission() {
+            const mt = document.getElementById('mission-text');
+            const mp = document.getElementById('mission-progress');
+            
+            if (missionState.step === 0) {
+                mt.innerText = "Elimina a 5 NPCs";
+                mp.innerText = `${missionState.kills} / 5`;
+                if (missionState.kills >= 5) {
+                    missionState.step = 1;
+                    unlockTrophy('first_blood');
+                    updateMission();
+                }
+            } else if (missionState.step === 1) {
+                mt.innerText = "Destruye 3 Coches";
+                mp.innerText = `${missionState.carsDestroyed} / 3`;
+                if (missionState.carsDestroyed >= 3) {
+                    missionState.step = 2;
+                    unlockTrophy('demolition');
+                    updateMission();
+                }
+            } else {
+                mt.innerText = "MISIÓN COMPLETADA - PLATINO";
+                mp.innerText = "100%";
+                unlockTrophy('platinum');
+            }
+        }
+
+        // Bucle principal
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Input de mando PS5
+            if (gamepad) {
+                const axes = gamepad.axes;
+                if (Math.abs(axes[0]) > 0.1) drone.vel.x += axes[0] * drone.speed * 0.1;
+                if (Math.abs(axes[1]) > 0.1) drone.vel.z += axes[1] * drone.speed * 0.1;
+                if (gamepad.buttons[0].pressed) drone.vel.y += drone.speed * 0.1; // X subir
+                if (gamepad.buttons[1].pressed) drone.vel.y -= drone.speed * 0.1; // Círculo bajar
+                if (gamepad.buttons[7].pressed) { // R2 disparar
+                    window.dispatchEvent(new Event('mousedown'));
+                }
+            }
+
+            // Input de teclado
+            if (keys['KeyW']) drone.vel.z -= drone.speed * 0.1;
+            if (keys['KeyS']) drone.vel.z += drone.speed * 0.1;
+            if (keys['KeyA']) drone.vel.x -= drone.speed * 0.1;
+            if (keys['KeyD']) drone.vel.x += drone.speed * 0.1;
+            if (keys['Space']) drone.vel.y += drone.speed * 0.1;
+            if (keys['ShiftLeft']) drone.vel.y -= drone.speed * 0.1;
+
+            // Física simple
+            drone.pos.add(drone.vel);
+            drone.vel.multiplyScalar(0.9); // Fricción
+            if (drone.pos.y < 1) drone.pos.y = 1; // Suelo
+            camera.position.copy(drone.pos);
+
+            // Rotación con ratón (simple)
+            camera.rotation.y -= movementX * 0.002;
+            camera.rotation.x -= movementY * 0.002;
+
+            // Actualizar partículas
+            for (let i = particles.length - 1; i >= 0; i--) {
+                particles[i].userData.life -= 0.02;
+                particles[i].scale.multiplyScalar(1.05);
+                particles[i].material.opacity = particles[i].userData.life;
+                if (particles[i].userData.life <= 0) {
+                    scene.remove(particles[i]);
+                    particles.splice(i, 1);
+                }
+            }
+
+            // HUD
+            document.getElementById('health-bar').style.width = `${drone.health}%`;
+            
+            renderer.render(scene, camera);
+        }
+
+        // Pointer lock para controlar cámara
+        document.body.addEventListener('click', () => {
+            document.body.requestPointerLock();
+        });
+        document.addEventListener('mousemove', e => {
+            if (document.pointerLockElement === document.body) {
+                camera.rotation.y -= e.movementX * 0.002;
+                camera.rotation.x -= e.movementY * 0.002;
+                camera.rotation.x = Math.max(-Math.PI/2, Math.min(Math.PI/2, camera.rotation.x));
+            }
+        });
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        updateMission();
+        animate();
+    </script>
+</body>
+</html>
